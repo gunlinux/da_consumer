@@ -10,7 +10,7 @@
 # =============================================================================
 set -euo pipefail
 
-REPO_DIR="/home/loki/donation_alerts_consumer"
+REPO_DIR="/home/loki/projects/bot/da_consumer"
 BRANCH="main"
 IMAGE="gunlinuxloki/redonats"
 NEW_UNIT="redonats"
@@ -21,7 +21,7 @@ TAG="${DEPLOY_TAG:?DEPLOY_TAG is required (commit short SHA)}"
 
 # The server's git remote historically pointed at the wrong repo; enforce the
 # real one so `git fetch` always pulls this repo.
-git remote set-url origin git@github.com:gunlinux/donation_alerts_consumer.git
+git remote set-url origin git@github.com:gunlinux/da_consumer.git
 
 # --- 1. Pull the deployed commit ----------------------------------------------
 git fetch --all

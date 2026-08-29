@@ -96,7 +96,7 @@ Secrets required in GitHub Actions:
 - `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` — Docker Hub push access
 - `PRIVATE_KEY_SSH` — SSH key for `loki@gunlinux.ru`
 
-On the server, the repo lives at `/home/loki/donation_alerts_consumer`
+On the server, the repo lives at `/home/loki/projects/bot/da_consumer`
 with a populated `.env` (the unit passes it to the container with
 `--env-file`). The deploy script normalizes `KEY="value"` quoting that
 `docker --env-file` does not strip.
