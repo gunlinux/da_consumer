@@ -1,0 +1,23 @@
+[Unit]
+Description=redonats
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=loki
+Group=loki
+
+# `-` prefix: tolerated failure (container not running yet on first start).
+ExecStartPre=-/usr/bin/docker rm -f redonats
+ExecStartPre=/usr/bin/docker pull gunlinuxloki/redonats:@IMAGE_TAG@
+ExecStart=/usr/bin/docker run --rm --name redonats \
+  --env-file /home/loki/donation_alerts_consumer/.env \
+  gunlinuxloki/redonats:@IMAGE_TAG@
+ExecStop=/usr/bin/docker stop redonats
+Restart=on-failure
+RestartSec=3
+SyslogIdentifier=redonats
+
+[Install]
+WantedBy=multi-user.target
