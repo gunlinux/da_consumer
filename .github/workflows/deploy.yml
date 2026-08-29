@@ -62,10 +62,11 @@ jobs:
           ssh-private-key: ${{ secrets.PRIVATE_KEY_SSH }}
 
       # The script runs from stdin (`bash -s`) with the tag exported so the
-      # remote shell can bake it into the systemd unit.
+      # remote shell can bake it into the systemd unit. SSH on gunlinux.ru
+      # runs on port 187 (non-standard).
       - name: Deploy to server
         env:
           DEPLOY_TAG: ${{ steps.tag.outputs.sha7 }}
         run: |
-          ssh -o StrictHostKeyChecking=no "loki@gunlinux.ru" \
+          ssh -o StrictHostKeyChecking=no -p 187 "loki@gunlinux.ru" \
             "DEPLOY_TAG=$DEPLOY_TAG bash -s" < .github/deploy.sh
