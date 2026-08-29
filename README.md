@@ -86,7 +86,7 @@ gateway and broker are replaced by fakes.
 
 Push to `main` triggers the `ci` workflow (lockfile, ruff check, ruff
 format, pytest). When it passes, `Deploy to Server` builds the image,
-pushes `gunlinuxloki/redonats:<sha7>` + `:latest` to Docker Hub, and
+pushes `gunlinuxloki/da_consumer:<sha7>` + `:latest` to Docker Hub, and
 SSHes into `loki@gunlinux.ru` to run `.github/deploy.sh`, which installs
 `deploy/redonats.service` (systemd unit with the tag baked in) and
 restarts the service.

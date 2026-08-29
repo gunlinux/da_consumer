@@ -168,7 +168,7 @@ never publishes into a missing queue.
 - `.github/workflows/code-quality.yaml` (`ci`, on push): `uv lock --locked`,
   `uvx ruff check .`, `uvx ruff format --check .`, `uv run pytest`.
 - `.github/workflows/deploy.yml` (on `ci` success on main): build and push
-  `gunlinuxloki/redonats:<sha7>` + `:latest` to Docker Hub, then SSH to
+  `gunlinuxloki/da_consumer:<sha7>` + `:latest` to Docker Hub, then SSH to
   `loki@gunlinux.ru` running `.github/deploy.sh` with `DEPLOY_TAG`.
 - `.github/deploy.sh` + `deploy/redonats.service`: pulls the commit, bakes
   the tag into the systemd unit (`@IMAGE_TAG@`), enables/restarts the

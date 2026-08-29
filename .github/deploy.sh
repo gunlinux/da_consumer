@@ -4,7 +4,7 @@
 #
 # Runs ON the server, invoked by .github/workflows/deploy.yml over SSH with
 # DEPLOY_TAG=<commit short SHA> exported. The image is built and pushed in CI
-# (public repo gunlinuxloki/redonats — no docker login needed here); this
+# (public repo gunlinuxloki/da_consumer — no docker login needed here); this
 # script installs the systemd unit with the tag baked in (the unit pulls the
 # image and runs it), and restarts the service. Idempotent: safe to re-run.
 # =============================================================================
@@ -12,7 +12,7 @@ set -euo pipefail
 
 REPO_DIR="/home/loki/projects/bot/da_consumer"
 BRANCH="main"
-IMAGE="gunlinuxloki/redonats"
+IMAGE="gunlinuxloki/da_consumer"
 NEW_UNIT="redonats"
 
 cd "$REPO_DIR" || exit 1
