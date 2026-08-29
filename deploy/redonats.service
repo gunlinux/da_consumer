@@ -11,7 +11,7 @@ Group=loki
 # `-` prefix: tolerated failure (container not running yet on first start).
 ExecStartPre=-/usr/bin/docker rm -f redonats
 ExecStartPre=/usr/bin/docker pull gunlinuxloki/da_consumer:@IMAGE_TAG@
-ExecStart=/usr/bin/docker run --rm --name redonats \
+ExecStart=/usr/bin/docker run --rm --network host --name redonats \
   --env-file /home/loki/projects/bot/da_consumer/.env \
   gunlinuxloki/da_consumer:@IMAGE_TAG@
 ExecStop=/usr/bin/docker stop redonats
