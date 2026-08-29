@@ -38,14 +38,15 @@ _WS_HEARTBEAT_SECONDS = 60.0
 class AiohttpGateway(Gateway):
     """DonationAlerts gateway adapter backed by aiohttp."""
 
-    def __init__(self) -> None:
-        self._session: aiohttp.ClientSession | None = None
+    def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
+        self._session = session
 
     async def connect(self) -> None:
-        """Open the shared HTTP session."""
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
-        )
+        """Open the shared HTTP session, unless one was injected."""
+        if self._session is None:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
+            )
 
     async def close(self) -> None:
         """Close the shared HTTP session, if open."""

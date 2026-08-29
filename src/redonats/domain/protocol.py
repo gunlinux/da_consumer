@@ -6,6 +6,7 @@ protocol can be unit-tested without network or mocking.
 
 import json
 from collections.abc import Mapping
+from decimal import Decimal
 
 from redonats.domain.errors import ProtocolError
 from redonats.domain.models import Donation
@@ -130,7 +131,7 @@ def parse_donation(data: Mapping[str, object]) -> Donation:
     try:
         return Donation(
             id=int(data["id"]),
-            amount=float(data["amount"]),
+            amount=Decimal(str(data["amount"])),
             currency=str(data["currency"]),
             username=str(data["username"]),
             message=str(data.get("message") or ""),

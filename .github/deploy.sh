@@ -36,6 +36,17 @@ sed -e "s|@IMAGE_TAG@|$TAG|g" deploy/redonats.service \
     | sudo tee "/etc/systemd/system/$NEW_UNIT.service" >/dev/null
 sudo systemctl daemon-reload
 
+# --- 2b. Install the health watchdog (unhealthy-container restart) ------------
+# Restart=on-failure only reacts to process exit; the timer restarts the
+# container when the image HEALTHCHECK reports it unhealthy. Idempotent.
+sudo install -m 0755 deploy/redonats-health.sh /usr/local/bin/redonats-health.sh
+sudo cp deploy/redonats-health.service deploy/redonats-health.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now redonats-health.timer
+
+# --- 2c. Lock down credentials ------------------------------------------------
+chmod 600 .env
+
 # --- 3. Start/update the service ---------------------------------------------
 sudo systemctl enable --now "$NEW_UNIT"
 

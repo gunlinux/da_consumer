@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic health check for the redonats container
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

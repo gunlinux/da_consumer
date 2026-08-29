@@ -58,9 +58,14 @@ Every donation is published to `AMQP_QUEUE` as JSON:
 }
 ```
 
+`created_at` is an ISO-8601 UTC timestamp (e.g. `2026-08-29T10:00:00Z`).
+`amount` is a JSON number. Messages are published persistent (delivery
+mode 2), so a broker restart does not drop messages still in the queue.
+
 The durable queue is declared on startup (`ensure_queue`), so the
 producer never publishes into a missing queue. A failed publish is
-logged and swallowed — the donation is still in the logs and the stream
+retried up to three times and then logged — the donation is still in
+the logs and the failure is counted in the heartbeat, and the stream
 stays up.
 
 ## Local development
@@ -106,7 +111,17 @@ with a populated `.env` (the unit passes it to the container with
 The image declares a `HEALTHCHECK` that verifies the heartbeat file is
 newer than 90 seconds. The listener writes it every 15 seconds while the
 event loop is alive, so an unhealthy state means the process is wedged
-or crashed — the systemd unit (`Restart=on-failure`) brings it back.
+or crashed. `Restart=on-failure` only reacts to process exit, so a
+wedged-but-alive process would never be recovered by systemd alone — a
+watchdog timer (`deploy/redonats-health.timer`, installed by
+`deploy.sh`) inspects `docker inspect` health every 2 minutes and
+restarts the container when it reports `unhealthy`.
+
+The heartbeat file is JSON: `{"ts": ..., "donations": N,
+"publish_failures": M, "last_donation_at": ...}`. Its mtime is the
+liveness signal for the HEALTHCHECK; the counters expose stream and
+publish health. Every 15 minutes a `health summary` log line reports the
+same counters.
 
 If you override `DA_HEARTBEAT_PATH`, update the path in the Dockerfile
 `HEALTHCHECK` accordingly.
