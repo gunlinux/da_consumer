@@ -109,6 +109,11 @@ def test_parse_donation_raises_when_field_missing() -> None:
         parse_donation({k: v for k, v in DONATION_DATA.items() if k != "amount"})
 
 
+def test_parse_donation_raises_on_non_numeric_amount() -> None:
+    with pytest.raises(ProtocolError, match="misses required fields"):
+        parse_donation({**DONATION_DATA, "amount": "not-a-number"})
+
+
 def test_parse_push_with_json_string_data() -> None:
     envelope = {"push": {"data": json.dumps(DONATION_DATA)}}
     assert parse_push(envelope).id == 1

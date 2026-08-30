@@ -151,6 +151,7 @@ async def test_make_push_handler_records_failure_after_retries(caplog) -> None:
 
     assert stats.publish_failures == 1
     assert "failed to publish donation id=1" in caplog.text
+    assert "RuntimeError: broker down" in caplog.text
 
 
 async def test_make_push_handler_survives_publish_failure(caplog) -> None:

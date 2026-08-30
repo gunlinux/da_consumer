@@ -6,7 +6,7 @@ protocol can be unit-tested without network or mocking.
 
 import json
 from collections.abc import Mapping
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from redonats.domain.errors import ProtocolError
 from redonats.domain.models import Donation
@@ -137,7 +137,7 @@ def parse_donation(data: Mapping[str, object]) -> Donation:
             message=str(data.get("message") or ""),
             created_at=str(data["created_at"]),
         )
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
         raise ProtocolError(
             f"donation payload misses required fields: {data!r}"
         ) from exc

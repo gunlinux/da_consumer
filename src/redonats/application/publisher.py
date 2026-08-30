@@ -49,7 +49,9 @@ class Broker(Protocol):
 
     async def declare_queue(self, queue: RabbitQueue) -> None: ...
 
-    async def publish(self, message: Any, *, queue: str) -> None: ...
+    async def publish(
+        self, message: Any, *, queue: str, persist: bool = False
+    ) -> None: ...
 
 
 def make_broker(settings: Settings) -> RabbitBroker:
@@ -61,7 +63,7 @@ def make_broker(settings: Settings) -> RabbitBroker:
     )
 
 
-async def ensure_queue(broker: RabbitBroker, settings: Settings) -> None:
+async def ensure_queue(broker: Broker, settings: Settings) -> None:
     """Declare the durable queue so publishes are never silently dropped."""
     await broker.declare_queue(RabbitQueue(settings.amqp_queue, durable=True))
 
@@ -79,7 +81,7 @@ def to_donation_create(donation: Donation) -> DonationCreate:
 
 
 async def publish_donation(
-    broker: RabbitBroker, donation: Donation, settings: Settings
+    broker: Broker, donation: Donation, settings: Settings
 ) -> None:
     """Publish one donation to the queue as a persistent message."""
     payload = to_donation_create(donation)
@@ -92,7 +94,7 @@ async def publish_donation(
 
 
 async def _publish_with_retry(
-    broker: RabbitBroker, donation: Donation, settings: Settings
+    broker: Broker, donation: Donation, settings: Settings
 ) -> None:
     """Publish with bounded retries; raises once the attempts are exhausted."""
     for attempt in range(_PUBLISH_MAX_ATTEMPTS):
@@ -108,12 +110,13 @@ async def _publish_with_retry(
                 attempt + 1,
                 donation.id,
                 delay,
+                exc_info=True,
             )
             await asyncio.sleep(delay)
 
 
 def make_push_handler(
-    broker: RabbitBroker,
+    broker: Broker,
     settings: Settings,
     stats: Stats | None = None,
 ) -> PushHandler:
@@ -131,7 +134,7 @@ def make_push_handler(
         try:
             await _publish_with_retry(broker, donation, settings)
         except Exception:
-            logger.error(
+            logger.exception(
                 "failed to publish donation id=%d after %d attempts",
                 donation.id,
                 _PUBLISH_MAX_ATTEMPTS,
