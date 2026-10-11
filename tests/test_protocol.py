@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -99,6 +100,12 @@ def test_parse_donation() -> None:
     )
 
 
+def test_parse_donation_normalizes_integer_amount() -> None:
+    donation = parse_donation({**DONATION_DATA, "amount": 12})
+    assert donation.amount == 12
+    assert isinstance(donation.amount, Decimal)
+
+
 def test_parse_donation_defaults_message() -> None:
     donation = parse_donation({**DONATION_DATA, "message": None})
     assert donation.message == ""
@@ -107,6 +114,11 @@ def test_parse_donation_defaults_message() -> None:
 def test_parse_donation_raises_when_field_missing() -> None:
     with pytest.raises(ProtocolError, match="misses required fields"):
         parse_donation({k: v for k, v in DONATION_DATA.items() if k != "amount"})
+
+
+def test_parse_donation_raises_on_non_numeric_amount() -> None:
+    with pytest.raises(ProtocolError, match="misses required fields"):
+        parse_donation({**DONATION_DATA, "amount": "not-a-number"})
 
 
 def test_parse_push_with_json_string_data() -> None:

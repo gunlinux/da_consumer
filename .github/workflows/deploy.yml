@@ -14,6 +14,12 @@ on:
     types:
       - completed
 
+# Serialize deploys: two pushes in quick succession must not interleave on
+# the live server (deploy.sh resets the repo and edits .env).
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 

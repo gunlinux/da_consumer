@@ -1,6 +1,7 @@
 """Immutable domain models."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Final
 
 API_BASE: Final = "https://www.donationalerts.com/api/v1"
@@ -29,8 +30,13 @@ class Donation:
     """A single donation event."""
 
     id: int
-    amount: float
+    amount: Decimal
     currency: str
     username: str
     message: str
     created_at: str
+
+    def __post_init__(self) -> None:
+        # Normalize float inputs through a decimal string so money values
+        # never carry binary floating-point artifacts.
+        object.__setattr__(self, "amount", Decimal(str(self.amount)))
