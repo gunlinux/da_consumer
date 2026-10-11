@@ -44,7 +44,9 @@ def run_cli(env: Mapping[str, str | None], gateway: Gateway) -> None:
     except ConfigError as exc:
         print(f"configuration error: {exc}", flush=True)
         raise SystemExit(2) from exc
-    asyncio.run(_async_main(settings, gateway))
+    code = asyncio.run(_async_main(settings, gateway))
+    if code:
+        raise SystemExit(code)
 
 
 async def _async_main(
@@ -54,7 +56,7 @@ async def _async_main(
     broker_factory: Callable[[Settings], Broker] = make_broker,
     signals: tuple[signal.Signals, ...] = (signal.SIGTERM, signal.SIGINT),
     shutdown: asyncio.Event | None = None,
-) -> None:
+) -> int:
     """Run the listener: broker startup, signal handling and the stream loop.
 
     Args:
@@ -63,13 +65,16 @@ async def _async_main(
         broker_factory: builds the broker; injectable for tests.
         signals: OS signals requesting shutdown; empty disables them.
         shutdown: shutdown event; created and wired to ``signals`` when omitted.
+
+    Returns:
+        0 on a clean shutdown, 1 on broker or queue startup failure.
     """
     broker = broker_factory(settings)
     try:
         await broker.start()
     except Exception as exc:
         print(f"could not connect to RabbitMQ: {exc}", flush=True)
-        raise SystemExit(1) from exc
+        return 1
     loop = asyncio.get_running_loop()
     installed = shutdown is None
     try:
@@ -77,7 +82,7 @@ async def _async_main(
             await ensure_queue(broker, settings)
         except Exception as exc:
             print(f"could not declare queue: {exc}", flush=True)
-            raise SystemExit(1) from exc
+            return 1
         event = shutdown if shutdown is not None else asyncio.Event()
         if installed:
             for sig in signals:
@@ -97,3 +102,4 @@ async def _async_main(
                     loop.remove_signal_handler(sig)
     finally:
         await broker.stop()
+    return 0

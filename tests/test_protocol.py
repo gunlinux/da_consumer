@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -97,6 +98,12 @@ def test_parse_donation() -> None:
         message="hello",
         created_at="2026-08-29T10:00:00Z",
     )
+
+
+def test_parse_donation_normalizes_integer_amount() -> None:
+    donation = parse_donation({**DONATION_DATA, "amount": 12})
+    assert donation.amount == 12
+    assert isinstance(donation.amount, Decimal)
 
 
 def test_parse_donation_defaults_message() -> None:

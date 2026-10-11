@@ -35,6 +35,18 @@ _HTTP_TIMEOUT_SECONDS = 30.0
 _WS_HEARTBEAT_SECONDS = 60.0
 
 
+def _describe(exc: BaseException) -> str:
+    """Render an exception as its class name, plus its text when non-empty.
+
+    Message-less exceptions (e.g. a bare ``TimeoutError``) would render an
+    empty string with ``%s``; naming the class keeps the failure log useful.
+    """
+    message = str(exc)
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__
+
+
 class AiohttpGateway(Gateway):
     """DonationAlerts gateway adapter backed by aiohttp."""
 
@@ -57,7 +69,7 @@ class AiohttpGateway(Gateway):
     @property
     def _http(self) -> aiohttp.ClientSession:
         if self._session is None:
-            raise RuntimeError("gateway is not connected")
+            raise ProtocolError("gateway is not connected")
         return self._session
 
     async def run_stream(
@@ -72,17 +84,23 @@ class AiohttpGateway(Gateway):
             errors propagate.
         """
         started = time.monotonic()
+        step = "token exchange"
         try:
             connection_token = await self._fetch_connection_token(settings)
+            step = "handshake"
             async with self._http.ws_connect(
                 settings.ws_url, heartbeat=_WS_HEARTBEAT_SECONDS
             ) as ws:
                 client_uid = await self._handshake(ws, connection_token)
+                step = "subscription"
                 token = await self._create_subscription(settings, client_uid)
                 await self._subscribe(ws, settings, token)
+                step = "drain"
                 await self._drain(ws, on_push)
         except (TimeoutError, aiohttp.ClientError, OSError, ProtocolError) as exc:
-            logger.warning("stream attempt failed: %s", exc)
+            logger.warning(
+                "stream attempt failed: step=%s error=%s", step, _describe(exc)
+            )
             return StreamOutcome(connected=False, duration=time.monotonic() - started)
         return StreamOutcome(connected=True, duration=time.monotonic() - started)
 

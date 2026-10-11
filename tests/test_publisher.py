@@ -1,7 +1,10 @@
 import logging
 
+import pytest
+
 import redonats.application.publisher as publisher
 from redonats.application.publisher import (
+    _publish_with_retry,
     ensure_queue,
     make_broker,
     make_push_handler,
@@ -63,7 +66,7 @@ async def test_publish_donation_publishes_persistent_json_payload() -> None:
     broker = FakeBroker()
     settings = make_settings()
 
-    await publish_donation(broker, make_donation(), settings)
+    await publish_donation(broker, make_donation(), settings.amqp_queue)
 
     assert len(broker.published) == 1
     payload, queue, kwargs = broker.published[0]
@@ -78,6 +81,23 @@ async def test_publish_donation_publishes_persistent_json_payload() -> None:
         "created_at": "2026-08-29T10:00:00Z",
     }
     assert isinstance(payload["amount"], (int, float))
+
+
+async def test_publish_with_retry_does_not_retry_non_transient_error() -> None:
+    class NonTransientBroker:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def publish(self, message, *, queue=None, **kwargs) -> None:
+            self.calls += 1
+            raise ValueError("cannot serialize")
+
+    broker = NonTransientBroker()
+
+    with pytest.raises(ValueError):
+        await _publish_with_retry(broker, make_donation(), make_settings())
+
+    assert broker.calls == 1
 
 
 async def test_ensure_queue_declares_durable_queue() -> None:

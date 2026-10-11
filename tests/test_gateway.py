@@ -3,8 +3,9 @@ import logging
 
 import aiohttp
 
+from redonats.domain.errors import ProtocolError
 from redonats.domain.models import Donation, Settings
-from redonats.infrastructure.gateway import AiohttpGateway, _handle_text
+from redonats.infrastructure.gateway import AiohttpGateway, _describe, _handle_text
 
 
 def _donation_frame() -> str:
@@ -17,6 +18,14 @@ def _donation_frame() -> str:
         "created_at": "2026-08-29T10:00:00Z",
     }
     return json.dumps({"push": {"data": donation}})
+
+
+def test_describe_message_less_exception_names_class_only() -> None:
+    assert _describe(TimeoutError()) == "TimeoutError"
+
+
+def test_describe_exception_with_message_includes_both() -> None:
+    assert _describe(ProtocolError("rejected")) == "ProtocolError: rejected"
 
 
 async def test_handle_text_delivers_push() -> None:
@@ -220,13 +229,128 @@ async def test_run_stream_full_flow_delivers_donation() -> None:
     assert len(session.ws.sent) == 2
 
 
-async def test_run_stream_reports_failure_on_http_error() -> None:
+async def test_run_stream_reports_failure_on_http_error(caplog) -> None:
     class FailingGetSession(FakeSession):
         def get(self, url, headers=None) -> FakeResponse:
             return FakeResponse({}, status=500)
 
     session = FailingGetSession({}, {}, FakeWS([], []))
     gateway = AiohttpGateway(session=session)
+    received: list[Donation] = []
+
+    async def sink(donation: Donation) -> None:
+        received.append(donation)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = await gateway.run_stream(_make_settings(), sink)
+
+    assert outcome.connected is False
+    assert received == []
+    assert "step=token exchange" in caplog.text
+    assert "error=ClientError: HTTP 500" in caplog.text
+
+
+async def test_run_stream_failure_logs_class_for_message_less_timeout(caplog) -> None:
+    class TimingOutSession(FakeSession):
+        def get(self, url, headers=None) -> FakeResponse:
+            raise TimeoutError()
+
+    session = TimingOutSession({}, {}, FakeWS([], []))
+    gateway = AiohttpGateway(session=session)
+    received: list[Donation] = []
+
+    async def sink(donation: Donation) -> None:
+        received.append(donation)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = await gateway.run_stream(_make_settings(), sink)
+
+    assert outcome.connected is False
+    assert received == []
+    assert "step=token exchange" in caplog.text
+    assert "error=TimeoutError" in caplog.text
+    assert "failed:" not in caplog.text.replace("stream attempt failed:", "")
+
+
+async def test_run_stream_failure_logs_handshake_step(caplog) -> None:
+    class RefusingConnectSession(FakeSession):
+        def ws_connect(self, url, heartbeat=None):
+            raise aiohttp.ClientError("connect refused")
+
+    session = RefusingConnectSession(
+        {"data": {"socket_connection_token": "conn-tok"}}, {}, FakeWS([], [])
+    )
+    gateway = AiohttpGateway(session=session)
+    received: list[Donation] = []
+
+    async def sink(donation: Donation) -> None:
+        received.append(donation)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = await gateway.run_stream(_make_settings(), sink)
+
+    assert outcome.connected is False
+    assert "step=handshake" in caplog.text
+    assert "error=ClientError: connect refused" in caplog.text
+
+
+async def test_run_stream_failure_logs_subscription_step(caplog) -> None:
+    class FailingPostSession(FakeSession):
+        def post(self, url, json=None, headers=None) -> FakeResponse:
+            return FakeResponse({}, status=500)
+
+    session = FailingPostSession(
+        {"data": {"socket_connection_token": "conn-tok"}},
+        {},
+        FakeWS(responses=[{"result": {"client": "client-uid"}}], drain=[]),
+    )
+    gateway = AiohttpGateway(session=session)
+    received: list[Donation] = []
+
+    async def sink(donation: Donation) -> None:
+        received.append(donation)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = await gateway.run_stream(_make_settings(), sink)
+
+    assert outcome.connected is False
+    assert "step=subscription" in caplog.text
+    assert "error=ClientError: HTTP 500" in caplog.text
+
+
+async def test_run_stream_failure_logs_drain_step(caplog) -> None:
+    class DrainFailingWS(FakeWS):
+        async def __anext__(self):
+            raise OSError("connection reset")
+
+    ws = DrainFailingWS(
+        responses=[
+            {"result": {"client": "client-uid"}},
+            {"result": {"type": 1, "channel": "$alerts:donation_42"}},
+        ],
+        drain=[],
+    )
+    session = FakeSession(
+        {"data": {"socket_connection_token": "conn-tok"}},
+        {"channels": [{"token": "sub-tok"}]},
+        ws,
+    )
+    gateway = AiohttpGateway(session=session)
+    received: list[Donation] = []
+
+    async def sink(donation: Donation) -> None:
+        received.append(donation)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = await gateway.run_stream(_make_settings(), sink)
+
+    assert outcome.connected is False
+    assert "step=drain" in caplog.text
+    assert "error=OSError: connection reset" in caplog.text
+
+
+async def test_run_stream_reports_failure_when_not_connected() -> None:
+    gateway = AiohttpGateway()
     received: list[Donation] = []
 
     async def sink(donation: Donation) -> None:

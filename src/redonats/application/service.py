@@ -9,7 +9,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -23,6 +22,12 @@ HEARTBEAT_INTERVAL: float = 15.0
 BACKOFF_BASE: float = 1.0
 MIN_STREAM_DURATION: float = 30.0
 HEARTBEAT_SUMMARY_TICKS: int = 60
+# Transport-level failures the reconnect loop tolerates. Expected gateway
+# failures (timeouts, HTTP errors, protocol errors) are already folded into
+# StreamOutcome by the gateway; these are the unexpected transport errors
+# that can still surface (dropped socket, closed event loop). Programming
+# errors (TypeError, ValueError, ...) propagate and fail fast instead.
+_GATEWAY_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (OSError, RuntimeError)
 
 
 @dataclass
@@ -38,10 +43,18 @@ class Stats:
     publish_failures: int = 0
     last_donation_at: float | None = None
 
-    def record_donation(self) -> None:
+    def record_donation(self, now: float) -> None:
         """Count a received donation and stamp its arrival time."""
         self.donations += 1
-        self.last_donation_at = time.time()
+        self.last_donation_at = now
+
+    def record_publish_failure(self) -> None:
+        """Count a publish that failed after all retries."""
+        self.publish_failures += 1
+
+    def record_publish_success(self) -> None:
+        """Reset the consecutive publish-failure counter after a success."""
+        self.publish_failures = 0
 
 
 def _stats_payload(stats: Stats | None) -> dict[str, object]:
@@ -55,7 +68,7 @@ def _stats_payload(stats: Stats | None) -> dict[str, object]:
     }
 
 
-def log_donation(donation: Donation) -> None:
+async def log_donation(donation: Donation) -> None:
     """Log a donation as a structured key=value line.
 
     The message is JSON-encoded so whitespace or quotes in the free text
@@ -70,11 +83,6 @@ def log_donation(donation: Donation) -> None:
         donation.created_at,
         json.dumps(donation.message, ensure_ascii=False),
     )
-
-
-async def _log_only(donation: Donation) -> None:
-    """Default sink: log the donation."""
-    log_donation(donation)
 
 
 def backoff_delay(attempt: int, max_delay: float) -> float:
@@ -130,7 +138,7 @@ async def run(
     settings: Settings,
     gateway: Gateway,
     shutdown: asyncio.Event,
-    on_push: PushHandler = _log_only,
+    on_push: PushHandler = log_donation,
     backoff: Callable[[int, float], float] = backoff_delay,
     stats: Stats | None = None,
 ) -> None:
@@ -155,7 +163,7 @@ async def run(
         while not shutdown.is_set():
             try:
                 outcome = await gateway.run_stream(settings, on_push)
-            except Exception:
+            except _GATEWAY_TRANSIENT_ERRORS:
                 logger.exception("unexpected gateway failure")
                 outcome = StreamOutcome(connected=False, duration=0.0)
             if outcome.connected and outcome.duration >= MIN_STREAM_DURATION:

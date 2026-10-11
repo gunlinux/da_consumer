@@ -105,37 +105,50 @@ def test_run_cli_exits_2_on_invalid_numbers(capsys) -> None:
     assert "configuration error" in capsys.readouterr().out
 
 
-async def test_async_main_exits_1_on_broker_failure(capsys) -> None:
+def test_run_cli_exits_1_on_nonzero_async_main(monkeypatch) -> None:
+    async def failing_main(settings, gateway) -> int:
+        return 1
+
+    monkeypatch.setattr("redonats.cli._async_main", failing_main)
+    env = {
+        "DA_USER_ID": "42",
+        "DA_ACCESS_TOKEN": "secret",
+        "AMQP_DSN": "amqp://localhost:5672",
+    }
+    with pytest.raises(SystemExit) as excinfo:
+        run_cli(env, FakeGateway())
+    assert excinfo.value.code == 1
+
+
+async def test_async_main_returns_1_on_broker_failure(capsys) -> None:
     settings = Settings(
         client_id="42",
         access_token="secret",
         amqp_dsn="amqp://localhost:5672",
     )
-    with pytest.raises(SystemExit) as excinfo:
-        await _async_main(
-            settings,
-            FakeGateway(),
-            broker_factory=lambda s: FakeBroker(fail_start=True),
-            signals=(),
-        )
-    assert excinfo.value.code == 1
+    result = await _async_main(
+        settings,
+        FakeGateway(),
+        broker_factory=lambda s: FakeBroker(fail_start=True),
+        signals=(),
+    )
+    assert result == 1
     assert "could not connect to RabbitMQ" in capsys.readouterr().out
 
 
-async def test_async_main_exits_1_on_queue_declare_failure(capsys) -> None:
+async def test_async_main_returns_1_on_queue_declare_failure(capsys) -> None:
     settings = Settings(
         client_id="42",
         access_token="secret",
         amqp_dsn="amqp://localhost:5672",
     )
-    with pytest.raises(SystemExit) as excinfo:
-        await _async_main(
-            settings,
-            FakeGateway(),
-            broker_factory=lambda s: FailDeclareBroker(),
-            signals=(),
-        )
-    assert excinfo.value.code == 1
+    result = await _async_main(
+        settings,
+        FakeGateway(),
+        broker_factory=lambda s: FailDeclareBroker(),
+        signals=(),
+    )
+    assert result == 1
     assert "could not declare queue" in capsys.readouterr().out
 
 
@@ -154,7 +167,7 @@ async def test_async_main_runs_stream_until_shutdown(tmp_path, monkeypatch) -> N
     )
     stop_task = asyncio.create_task(_stop_after(shutdown, 0.05))
 
-    await _async_main(
+    result = await _async_main(
         settings,
         gateway,
         broker_factory=lambda s: broker,
@@ -163,6 +176,7 @@ async def test_async_main_runs_stream_until_shutdown(tmp_path, monkeypatch) -> N
     )
     await stop_task
 
+    assert result == 0
     assert broker.started == 1
     assert broker.stopped == 1
     assert broker.declared == ["donations"]

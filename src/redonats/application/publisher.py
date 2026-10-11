@@ -8,9 +8,11 @@ then logged so a broker hiccup cannot tear down the donation stream.
 
 import asyncio
 import logging
+import time
 from decimal import Decimal
 from typing import Any, Protocol
 
+from aio_pika.exceptions import AMQPError
 from faststream.rabbit import RabbitBroker, RabbitQueue
 from pydantic import BaseModel, field_serializer
 
@@ -22,6 +24,15 @@ logger = logging.getLogger(__name__)
 
 _PUBLISH_MAX_ATTEMPTS: int = 3
 _PUBLISH_RETRY_DELAYS: tuple[float, ...] = (0.2, 0.5)
+# Transient broker failures worth retrying: AMQP protocol errors (channel
+# closed, delivery failed) plus transport errors (OSError / RuntimeError —
+# how aio_pika surfaces a dropped connection). Anything else, e.g. a
+# serialization bug, propagates instead of being retried pointlessly.
+_PUBLISH_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    AMQPError,
+    OSError,
+    RuntimeError,
+)
 
 
 class DonationCreate(BaseModel):
@@ -80,14 +91,12 @@ def to_donation_create(donation: Donation) -> DonationCreate:
     )
 
 
-async def publish_donation(
-    broker: Broker, donation: Donation, settings: Settings
-) -> None:
+async def publish_donation(broker: Broker, donation: Donation, queue: str) -> None:
     """Publish one donation to the queue as a persistent message."""
     payload = to_donation_create(donation)
     await broker.publish(
         payload.model_dump(mode="json"),
-        queue=settings.amqp_queue,
+        queue=queue,
         persist=True,
     )
     logger.info("published donation id=%d from %s", payload.id, payload.username)
@@ -96,12 +105,16 @@ async def publish_donation(
 async def _publish_with_retry(
     broker: Broker, donation: Donation, settings: Settings
 ) -> None:
-    """Publish with bounded retries; raises once the attempts are exhausted."""
+    """Publish with bounded retries on transient broker failures.
+
+    Only transport/protocol failures are retried; the final attempt's
+    error is re-raised so the caller can record it.
+    """
     for attempt in range(_PUBLISH_MAX_ATTEMPTS):
         try:
-            await publish_donation(broker, donation, settings)
+            await publish_donation(broker, donation, settings.amqp_queue)
             return
-        except Exception:
+        except _PUBLISH_TRANSIENT_ERRORS:
             if attempt == _PUBLISH_MAX_ATTEMPTS - 1:
                 raise
             delay = _PUBLISH_RETRY_DELAYS[attempt]
@@ -128,9 +141,9 @@ def make_push_handler(
     """
 
     async def handler(donation: Donation) -> None:
-        log_donation(donation)
+        await log_donation(donation)
         if stats is not None:
-            stats.record_donation()
+            stats.record_donation(time.time())
         try:
             await _publish_with_retry(broker, donation, settings)
         except Exception:
@@ -140,9 +153,9 @@ def make_push_handler(
                 _PUBLISH_MAX_ATTEMPTS,
             )
             if stats is not None:
-                stats.publish_failures += 1
+                stats.record_publish_failure()
         else:
             if stats is not None:
-                stats.publish_failures = 0
+                stats.record_publish_success()
 
     return handler
